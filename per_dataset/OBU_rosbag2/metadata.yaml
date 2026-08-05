@@ -1,0 +1,44 @@
+rosbag2_bagfile_information:
+  version: 9
+  storage_identifier: mcap
+  duration:
+    nanoseconds: 156067207255
+  starting_time:
+    nanoseconds_since_epoch: 1769016520808685709
+  message_count: 1557
+  topics_with_message_count:
+    - topic_metadata:
+        name: /communication/etsi_its_v2x_generation_cam/cam
+        type: etsi_its_cam_msgs/msg/CAM
+        serialization_format: cdr
+        offered_qos_profiles:
+          - history: keep_last
+            depth: 10
+            reliability: reliable
+            durability: volatile
+            deadline:
+              sec: 9223372036
+              nsec: 854775807
+            lifespan:
+              sec: 9223372036
+              nsec: 854775807
+            liveliness: automatic
+            liveliness_lease_duration:
+              sec: 9223372036
+              nsec: 854775807
+            avoid_ros_namespace_conventions: false
+        type_description_hash: ""
+      message_count: 1557
+  compression_format: ""
+  compression_mode: ""
+  relative_file_paths:
+    - OBU_rosbag2_0.mcap
+  files:
+    - path: OBU_rosbag2_0.mcap
+      starting_time:
+        nanoseconds_since_epoch: 1769016520808685709
+      duration:
+        nanoseconds: 156067207255
+      message_count: 1557
+  custom_data: ~
+  ros_distro: jazzy
