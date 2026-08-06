@@ -1,0 +1,117 @@
+#pragma once
+
+#include <map>
+#include <set>
+#include <string>
+#include <unordered_map>
+#include <vector>
+
+#include "ns3/ptr.h"
+#include "ns3/node.h"
+#include "ns3/node-container.h"
+#include "ns3/socket.h"
+#include "ns3/packet.h"
+#include <algorithm>
+
+// Needed for MonitorSnifferRx signature types:
+#include "ns3/wifi-phy.h"   // WifiTxVector, MpduInfo, SignalNoiseDbm
+
+#include "../model/sumo-client.h"
+
+namespace ns3 {
+class MobilityModel;
+class Socket;
+class Packet;
+} // namespace ns3
+
+class SumoPerHelper
+{
+public:
+  struct Config
+  {
+    // Coupling + dataset
+    double stepSec{0.1};
+    double windowSec{1.0};
+    double simEndSec{60.0};
+    std::string outCsv{"per_dataset.csv"};
+
+    // Traffic/app parameters
+    double beaconIntervalSec{0.1};
+    uint32_t beaconSizeBytes{300};
+    uint16_t port{5000};
+
+    // Pool + control
+    uint32_t maxVehicles{50};
+    double trafficStartSec{0.0};
+    bool fullMeshUnicast{false}; // kept for CLI compatibility (unused here)
+  };
+
+  explicit SumoPerHelper(const Config& cfg);
+  void Run(const std::string& sumocfg, bool gui);
+
+private:
+  // Pool mapping
+  ns3::Ptr<ns3::Node> AssignNodeToVehicle(const std::string& vehId);
+  void ReleaseVehicle(const std::string& vehId);
+
+  // SUMO -> ns-3 mobility update
+  void UpdateMobilityFromSumo(const std::vector<SumoVehicleState>& vehicles);
+
+  // Install once
+  void EnsureWifiAndApps();
+
+  // Callbacks / traces
+  void RxPacket(ns3::Ptr<ns3::Socket> sock);
+
+  // From CamBroadcastApp (TraceSource "Tx")
+  void TxTrace(uint32_t nodeId, uint32_t seq);
+
+  // From WifiPhy "MonitorSnifferRx"
+  void MonitorRxTrace(std::string context,
+                      ns3::Ptr<const ns3::Packet> packet,
+                      uint16_t channelFreqMhz,
+                      ns3::WifiTxVector txVector,
+                      ns3::MpduInfo mpdu,
+                      ns3::SignalNoiseDbm signalNoise,
+                      uint16_t staId);
+
+  // Window aggregation
+  void FlushWindow();
+  void StepOnce();
+  double DistanceMeters(uint32_t idxA, uint32_t idxB) const;
+
+private:
+  Config m_cfg;
+
+  // SUMO interface
+  SumoClient m_sumo;
+
+  // Node pool and mapping
+  ns3::NodeContainer m_pool;
+  bool m_wifiInstalled{false};
+
+  std::vector<uint32_t> m_freeIdx;
+  std::unordered_map<std::string, uint32_t> m_vehToIdx;   // vehId -> pool index
+  std::unordered_map<uint32_t, std::string> m_idxToVeh;   // pool index -> vehId
+
+  // vehicle speed (m/s)
+  std::unordered_map<std::string, double> m_speedById;
+
+  // Window counters:
+  // nodeId -> tx count (from CamBroadcastApp Tx trace)
+  std::unordered_map<uint32_t, uint32_t> m_txThisWindow;
+
+  // (srcNodeId, dstNodeId) -> rx count (from CamHeader in RxPacket)
+  std::map<std::pair<uint32_t, uint32_t>, uint32_t> m_rxThisWindow;
+
+  // RX sockets (one per node)
+  std::vector<ns3::Ptr<ns3::Socket>> m_rxSockets;
+
+  // Window PHY stats keyed by receiver nodeId (fast first step)
+  std::unordered_map<uint32_t, double> m_lastRssiDbmByNode;
+  std::unordered_map<uint32_t, double> m_lastSnrDbByNode;
+  std::map<std::pair<uint32_t,uint32_t>, double> m_rssiSumDbmThisWindow; // (src,dst)->sum
+std::map<std::pair<uint32_t,uint32_t>, double> m_snrSumDbThisWindow;  // (src,dst)->sum
+std::map<std::pair<uint32_t,uint32_t>, uint32_t> m_phySamplesThisWindow; // (src,dst)->count
+
+};

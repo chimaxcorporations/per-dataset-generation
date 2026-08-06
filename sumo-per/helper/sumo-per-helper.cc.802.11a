@@ -1,0 +1,549 @@
+#include "sumo-per-helper.h"
+
+// ns-3 modules
+#include "ns3/core-module.h"
+#include "ns3/network-module.h"
+#include "ns3/mobility-module.h"
+#include "ns3/wifi-module.h"
+#include "ns3/internet-module.h"
+#include "ns3/applications-module.h"
+
+// Sockets
+#include "ns3/udp-socket-factory.h"
+#include "ns3/inet-socket-address.h"
+#include "ns3/ipv4-address.h"
+
+// Your CAM pieces
+#include "../model/cam-broadcast-app.h"
+#include "../model/cam-header.h"
+
+#include <cmath>
+#include <fstream>
+#include <sstream>
+#include <sys/stat.h>
+
+using namespace ns3;
+
+NS_LOG_COMPONENT_DEFINE("SumoPerHelper");
+
+// --------------------------
+// Small CSV helpers
+// --------------------------
+static bool
+FileExists(const std::string& path)
+{
+  struct stat st;
+  return (stat(path.c_str(), &st) == 0);
+}
+
+static void
+EnsureCsvHeader(const std::string& path)
+{
+  if (FileExists(path))
+    return;
+
+  std::ofstream out(path, std::ios::out);
+  out << "t,src,dst,tx,rxOk,per,dist_m,v_src,v_dst,rssi_dbm,snr_db,cbr\n";
+}
+
+// --------------------------
+// Context parser: "/NodeList/<id>/DeviceList/..."
+// --------------------------
+static uint32_t
+ExtractNodeIdFromContext(const std::string& context)
+{
+  const std::string key = "/NodeList/";
+  const auto pos = context.find(key);
+
+  if (pos == std::string::npos)
+    {
+      return std::numeric_limits<uint32_t>::max(); // invalid marker
+    }
+
+  size_t i = pos + key.size();
+
+  // Ensure we are inside string bounds
+  if (i >= context.size() || !std::isdigit(static_cast<unsigned char>(context[i])))
+    {
+      return std::numeric_limits<uint32_t>::max();
+    }
+
+  uint32_t nodeId = 0;
+
+  while (i < context.size() &&
+         std::isdigit(static_cast<unsigned char>(context[i])))
+    {
+      nodeId = nodeId * 10 + (context[i] - '0');
+      ++i;
+    }
+
+  return nodeId;
+}
+
+
+// --------------------------
+// ctor
+// --------------------------
+SumoPerHelper::SumoPerHelper(const Config& cfg) : m_cfg(cfg) {}
+
+// --------------------------
+// Pool mapping
+// --------------------------
+Ptr<Node>
+SumoPerHelper::AssignNodeToVehicle(const std::string& vehId)
+{
+  auto it = m_vehToIdx.find(vehId);
+  if (it != m_vehToIdx.end())
+    {
+      return m_pool.Get(it->second);
+    }
+
+  if (m_freeIdx.empty())
+    {
+      NS_LOG_UNCOND("[sumo-per] WARNING: pool exhausted. Increase --maxVehicles. vehId=" << vehId);
+      return nullptr;
+    }
+
+  uint32_t idx = m_freeIdx.back();
+  m_freeIdx.pop_back();
+
+  m_vehToIdx[vehId] = idx;
+  m_idxToVeh[idx] = vehId;
+
+  // initialize position
+  auto mob = m_pool.Get(idx)->GetObject<MobilityModel>();
+  if (mob)
+    {
+      mob->SetPosition(Vector(0, 0, 0));
+    }
+
+  return m_pool.Get(idx);
+}
+
+void
+SumoPerHelper::ReleaseVehicle(const std::string& vehId)
+{
+  auto it = m_vehToIdx.find(vehId);
+  if (it == m_vehToIdx.end())
+    return;
+
+  uint32_t idx = it->second;
+  m_vehToIdx.erase(it);
+  m_idxToVeh.erase(idx);
+  m_freeIdx.push_back(idx);
+}
+
+// --------------------------
+// Mobility update from SUMO
+// --------------------------
+void
+SumoPerHelper::UpdateMobilityFromSumo(const std::vector<SumoVehicleState>& vehicles)
+{
+  std::set<std::string> active;
+
+  for (const auto& v : vehicles)
+    {
+      active.insert(v.id);
+
+      Ptr<Node> n = AssignNodeToVehicle(v.id);
+      if (!n)
+        {
+          continue;
+        }
+
+      Ptr<MobilityModel> mob = n->GetObject<MobilityModel>();
+      if (mob)
+        {
+          mob->SetPosition(Vector(v.x, v.y, 0.0));
+        }
+
+      m_speedById[v.id] = v.speed;
+    }
+
+  // Release vehicles that disappeared
+  std::vector<std::string> toRelease;
+  toRelease.reserve(m_vehToIdx.size());
+
+  for (const auto& kv : m_vehToIdx)
+    {
+      if (active.find(kv.first) == active.end())
+        {
+          toRelease.push_back(kv.first);
+        }
+    }
+
+  for (const auto& id : toRelease)
+    {
+      ReleaseVehicle(id);
+      m_speedById.erase(id);
+    }
+}
+
+// --------------------------
+// Wi-Fi + sockets + apps install (ONCE)
+// --------------------------
+void
+SumoPerHelper::EnsureWifiAndApps()
+{
+  if (m_wifiInstalled)
+    {
+      return;
+    }
+
+  // Create node pool
+  m_pool.Create(m_cfg.maxVehicles);
+
+  // Mobility model on all pool nodes
+  MobilityHelper mobility;
+  mobility.SetMobilityModel("ns3::ConstantPositionMobilityModel");
+  mobility.Install(m_pool);
+
+  // Wi-Fi baseline
+  WifiHelper wifi;
+  wifi.SetStandard(WIFI_STANDARD_80211a);
+  wifi.SetRemoteStationManager("ns3::ConstantRateWifiManager",
+                               "DataMode", StringValue("OfdmRate6Mbps"),
+                               "ControlMode", StringValue("OfdmRate6Mbps"));
+
+  // Channel
+  YansWifiChannelHelper chan;
+  chan.SetPropagationDelay("ns3::ConstantSpeedPropagationDelayModel");
+  chan.AddPropagationLoss("ns3::LogDistancePropagationLossModel",
+                          "Exponent", DoubleValue(2.0),
+                          "ReferenceDistance", DoubleValue(1.0),
+                          "ReferenceLoss", DoubleValue(46.6777));
+  chan.AddPropagationLoss("ns3::NakagamiPropagationLossModel");
+
+  // PHY
+  YansWifiPhyHelper phy;
+  phy.SetChannel(chan.Create());
+
+  phy.Set("TxPowerStart", DoubleValue(23.0));
+  phy.Set("TxPowerEnd",   DoubleValue(23.0));
+  phy.Set("TxGain",       DoubleValue(0.0));
+  phy.Set("RxGain",       DoubleValue(0.0));
+
+  WifiMacHelper mac;
+  mac.SetType("ns3::AdhocWifiMac");
+
+  NetDeviceContainer devs = wifi.Install(phy, mac, m_pool);
+
+  InternetStackHelper internet;
+  internet.Install(m_pool);
+
+  Ipv4AddressHelper ipv4;
+  ipv4.SetBase("10.0.0.0", "255.255.0.0");
+  ipv4.Assign(devs);
+
+  // Free list for mapping
+  m_freeIdx.clear();
+  m_freeIdx.reserve(m_pool.GetN());
+  for (uint32_t i = 0; i < m_pool.GetN(); ++i)
+    {
+      m_freeIdx.push_back(i);
+    }
+
+  // RX sockets + CAM broadcast TX app
+  m_rxSockets.clear();
+  m_rxSockets.reserve(m_pool.GetN());
+
+  for (uint32_t i = 0; i < m_pool.GetN(); ++i)
+    {
+      Ptr<Node> n = m_pool.Get(i);
+
+      // RX socket
+      Ptr<Socket> rx = Socket::CreateSocket(n, UdpSocketFactory::GetTypeId());
+      rx->SetAllowBroadcast(true);
+      rx->Bind(InetSocketAddress(Ipv4Address::GetAny(), m_cfg.port));
+      rx->SetRecvCallback(MakeCallback(&SumoPerHelper::RxPacket, this));
+      NS_LOG_UNCOND("[sumo-per] RX socket bound on node=" << n->GetId()
+                    << " port=" << m_cfg.port);
+      m_rxSockets.push_back(rx);
+
+      // TX broadcast app
+      Ptr<CamBroadcastApp> app = CreateObject<CamBroadcastApp>();
+      app->Setup(m_cfg.port, m_cfg.beaconSizeBytes, m_cfg.beaconIntervalSec, true);
+
+      // Count real TX per node via trace
+      app->TraceConnectWithoutContext("Tx", MakeCallback(&SumoPerHelper::TxTrace, this));
+
+      n->AddApplication(app);
+      app->SetStartTime(Seconds(m_cfg.trafficStartSec));
+      app->SetStopTime(Seconds(m_cfg.simEndSec));
+    }
+
+  // ---- IMPORTANT: correct MonitorSnifferRx connect ----
+  // (use FailSafe while iterating to avoid hard aborts)
+  ns3::Config::ConnectFailSafe(
+    "/NodeList/*/DeviceList/*/$ns3::WifiNetDevice/Phy/$ns3::WifiPhy/MonitorSnifferRx",
+    MakeCallback(&SumoPerHelper::MonitorRxTrace, this));
+
+  m_wifiInstalled = true;
+  NS_LOG_UNCOND("[sumo-per] Node pool created + stack installed for " << m_pool.GetN() << " nodes");
+}
+
+// --------------------------
+// TX trace from CamBroadcastApp
+// --------------------------
+void
+SumoPerHelper::TxTrace(uint32_t nodeId, uint32_t seq)
+{
+  // count TX per node per window
+  m_txThisWindow[nodeId]++;
+
+  // optional debug
+  NS_LOG_UNCOND("[sumo-per] TX node=" << nodeId << " seq=" << seq
+                << " txThisWindow=" << m_txThisWindow[nodeId]);
+}
+
+// --------------------------
+// RX callback: increments per-link rx counts this window
+// --------------------------
+void
+SumoPerHelper::RxPacket(Ptr<Socket> sock)
+{
+  Address from;
+  Ptr<Packet> p;
+
+  while ((p = sock->RecvFrom(from)))
+    {
+      CamHeader h;
+      if (p->PeekHeader(h) == 0)
+        {
+          NS_LOG_UNCOND("[sumo-per] RxPacket: missing CamHeader on node="
+                        << sock->GetNode()->GetId()
+                        << " bytes=" << p->GetSize());
+          continue;
+        }
+
+      // Remove if you don’t need the header anymore
+      p->RemoveHeader(h);
+
+      const uint32_t srcNodeId = h.GetSrcId();
+      const uint32_t dstNodeId = sock->GetNode()->GetId();
+
+      if (srcNodeId == dstNodeId)
+        {
+          continue;
+        }
+
+      m_rxThisWindow[{srcNodeId, dstNodeId}]++;
+    }
+}
+
+// --------------------------
+// MonitorSnifferRx trace: store RSSI/SNR per RX node for window
+// --------------------------
+void
+SumoPerHelper::MonitorRxTrace(std::string context,
+                              Ptr<const Packet> packet,
+                              uint16_t /*channelFreqMhz*/,
+                              WifiTxVector /*txVector*/,
+                              MpduInfo /*mpdu*/,
+                              SignalNoiseDbm signalNoise,
+                              uint16_t /*staId*/)
+{
+  // Receiver node id comes from the Config context string
+  const uint32_t rxNodeId = ExtractNodeIdFromContext(context);
+
+  // RSSI/SNR from PHY
+  const double rssiDbm  = signalNoise.signal;   // dBm
+  const double noiseDbm = signalNoise.noise;    // dBm
+  const double snrDb    = rssiDbm - noiseDbm;   // dB
+
+  // Extract srcNodeId from CamHeader (packet is const, so copy before parsing)
+  uint32_t srcNodeId = std::numeric_limits<uint32_t>::max();
+  {
+    Ptr<Packet> copy = packet->Copy();
+    CamHeader h;
+    if (copy->PeekHeader(h) > 0)
+      {
+        srcNodeId = h.GetSrcId();
+      }
+    else
+      {
+        // If your packet sometimes doesn't carry CamHeader, just keep per-RX-node stats
+        m_lastRssiDbmByNode[rxNodeId] = rssiDbm;
+        m_lastSnrDbByNode[rxNodeId]  = snrDb;
+        return;
+      }
+  }
+NS_LOG_UNCOND("Context=" << context << " -> nodeId=" << rxNodeId);
+  // Ignore self receptions if any
+  if (srcNodeId == rxNodeId)
+    {
+      return;
+    }
+
+  // ---- Per-link aggregation for current window ----
+  const auto key = std::make_pair(srcNodeId, rxNodeId);
+
+  m_rssiSumDbmThisWindow[key] += rssiDbm;
+  m_snrSumDbThisWindow[key]   += snrDb;
+  m_phySamplesThisWindow[key] += 1;
+
+  // Optional: keep "last seen" per receiver too (handy for debugging)
+  m_lastRssiDbmByNode[rxNodeId] = rssiDbm;
+  m_lastSnrDbByNode[rxNodeId]  = snrDb;
+}
+
+
+
+// --------------------------
+// Distance helper between two pool indices
+// --------------------------
+double
+SumoPerHelper::DistanceMeters(uint32_t idxA, uint32_t idxB) const
+{
+  Ptr<MobilityModel> ma = m_pool.Get(idxA)->GetObject<MobilityModel>();
+  Ptr<MobilityModel> mb = m_pool.Get(idxB)->GetObject<MobilityModel>();
+  if (!ma || !mb) return 0.0;
+
+  Vector a = ma->GetPosition();
+  Vector b = mb->GetPosition();
+
+  const double dx = a.x - b.x;
+  const double dy = a.y - b.y;
+  return std::sqrt(dx * dx + dy * dy);
+}
+
+// --------------------------
+// Flush window: write PER per (src,dst)
+// --------------------------
+void
+SumoPerHelper::FlushWindow()
+{
+  EnsureCsvHeader(m_cfg.outCsv);
+
+  std::ofstream out(m_cfg.outCsv, std::ios::app);
+  const double tNow = Simulator::Now().GetSeconds();
+
+  // Only consider currently mapped vehicles
+  for (const auto& s : m_vehToIdx)
+    {
+      const std::string& srcVeh = s.first;
+      const uint32_t srcIdx = s.second;
+      const uint32_t srcNodeId = m_pool.Get(srcIdx)->GetId();
+
+      // tx count for this source in this window (from TxTrace)
+      const uint32_t tx = [&]() -> uint32_t {
+        auto it = m_txThisWindow.find(srcNodeId);
+        return (it == m_txThisWindow.end()) ? 0u : it->second;
+      }();
+
+      for (const auto& d : m_vehToIdx)
+        {
+          const std::string& dstVeh = d.first;
+          const uint32_t dstIdx = d.second;
+
+          if (srcVeh == dstVeh) continue;
+
+          const uint32_t dstNodeId = m_pool.Get(dstIdx)->GetId();
+
+          const uint32_t rxOk = [&]() -> uint32_t {
+            auto it = m_rxThisWindow.find({srcNodeId, dstNodeId});
+            return (it == m_rxThisWindow.end()) ? 0u : it->second;
+          }();
+
+          double per = 0.0;
+          if (tx > 0)
+            {
+              per = 1.0 - (static_cast<double>(rxOk) / static_cast<double>(tx));
+              per = std::clamp(per, 0.0, 1.0);
+            }
+
+          const double dist = DistanceMeters(srcIdx, dstIdx);
+
+          // DEBUG (per-link) – WARNING: very chatty for large N
+          NS_LOG_UNCOND("dist(" << srcVeh << "," << dstVeh << ")=" << dist);
+
+          const double vSrc = (m_speedById.count(srcVeh) ? m_speedById.at(srcVeh) : 0.0);
+          const double vDst = (m_speedById.count(dstVeh) ? m_speedById.at(dstVeh) : 0.0);
+
+          // RSSI/SNR per-link mean over this window
+          double rssi = 0.0;
+          double snr  = 0.0;
+          const auto key = std::make_pair(srcNodeId, dstNodeId);
+
+          auto sit = m_phySamplesThisWindow.find(key);
+          if (sit != m_phySamplesThisWindow.end() && sit->second > 0)
+            {
+              const double n = static_cast<double>(sit->second);
+
+              auto rit = m_rssiSumDbmThisWindow.find(key);
+              auto nit = m_snrSumDbThisWindow.find(key);
+
+              const double rssiSum = (rit != m_rssiSumDbmThisWindow.end()) ? rit->second : 0.0;
+              const double snrSum  = (nit != m_snrSumDbThisWindow.end())  ? nit->second : 0.0;
+
+              rssi = rssiSum / n;
+              snr  = snrSum / n;
+            }
+
+          const double cbr = 0.0; // placeholder
+
+          out << tNow << ","
+              << srcVeh << ","
+              << dstVeh << ","
+              << tx << ","
+              << rxOk << ","
+              << per << ","
+              << dist << ","
+              << vSrc << ","
+              << vDst << ","
+              << rssi << ","
+              << snr << ","
+              << cbr << "\n";
+        }
+    }
+
+  // reset window state
+  m_txThisWindow.clear();
+  m_rxThisWindow.clear();
+
+  // Clear PHY aggregation maps (per-link mean for next window)
+  m_rssiSumDbmThisWindow.clear();
+  m_snrSumDbThisWindow.clear();
+  m_phySamplesThisWindow.clear();
+
+  // Optional debugging maps
+  m_lastRssiDbmByNode.clear();
+  m_lastSnrDbByNode.clear();
+
+  // schedule next flush
+  Simulator::Schedule(Seconds(m_cfg.windowSec), &SumoPerHelper::FlushWindow, this);
+}
+// --------------------------
+// Run (single Simulator::Run)
+// --------------------------
+void
+SumoPerHelper::Run(const std::string& sumocfg, bool gui)
+{
+  Time::SetResolution(Time::NS);
+
+  m_sumo.Start(sumocfg, gui);
+
+  EnsureWifiAndApps();
+
+  Simulator::Schedule(Seconds(0.0), &SumoPerHelper::StepOnce, this);
+  Simulator::Schedule(Seconds(m_cfg.windowSec), &SumoPerHelper::FlushWindow, this);
+
+  Simulator::Stop(Seconds(m_cfg.simEndSec));
+  Simulator::Run();
+  Simulator::Destroy();
+
+  m_sumo.Close();
+}
+
+void
+SumoPerHelper::StepOnce()
+{
+  if (m_sumo.IsEnabled())
+    {
+      m_sumo.Step(m_cfg.stepSec);
+      auto vehicles = m_sumo.GetVehicles();
+      UpdateMobilityFromSumo(vehicles);
+    }
+
+  Simulator::Schedule(Seconds(m_cfg.stepSec), &SumoPerHelper::StepOnce, this);
+}
