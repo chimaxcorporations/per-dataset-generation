@@ -1,0 +1,1 @@
+run_id,scenario_id,ns3_seed,ns3_run,sumo_seed,propagation,window_start_s,window_end_s,src,dst,tx,rx_ok,per,dist_m,within_evaluation_radius,v_src_mps,v_dst_mps,rssi_dbm,snr_db,phy_n,cbr_tx,cbr_rx,cbr_global
