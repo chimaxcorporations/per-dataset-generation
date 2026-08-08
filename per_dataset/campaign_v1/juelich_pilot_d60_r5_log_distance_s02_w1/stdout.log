@@ -1,0 +1,23 @@
+[0/2] Re-checking globbed directories...
+ninja: no work to do.
+[0/2] Re-checking globbed directories...
+ninja: no work to do.
+[sumo-per-main] runId=juelich_pilot_d60_r5_log_distance_s02_w1 simEnd=50 trafficStart=0 output=per_dataset/campaign_v1/juelich_pilot_d60_r5_log_distance_s02_w1/window.csv
+Loading net-file from 'juelich_sumo/density_60/../osm.net.xml.gz' ... done (899ms).
+Loading additional-files from 'juelich_sumo/density_60/../osm.poly.xml.gz' ... done (47ms).
+Loading additional-files from 'juelich_sumo/density_60/../output.add.xml' ... done (12ms).
+Loading route-files incrementally from 'juelich_sumo/density_60/osm.passenger.trips.xml'
+Loading done.
+Simulation version 1.25.0 started via libsumo with time: 0.00.
+Simulation ended at time: 50.10.
+Reason: Libsumo requested termination.
+Statistics (avg of 0):
+ RouteLength: 0.00
+ Speed: 0.00
+ Duration: 0.00
+ WaitingTime: 0.00
+ TimeLoss: 0.00
+ DepartDelay: 0.00
+DijkstraRouter answered 35 queries and explored 448.71 edges on average.
+DijkstraRouter spent 0.02s answering queries (0.69ms on average).
+[sumo-per] Done. Dataset: per_dataset/campaign_v1/juelich_pilot_d60_r5_log_distance_s02_w1/window.csv
