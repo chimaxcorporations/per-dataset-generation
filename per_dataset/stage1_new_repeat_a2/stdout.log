@@ -1,0 +1,20 @@
+[0/2] Re-checking globbed directories...
+ninja: no work to do.
+[0/2] Re-checking globbed directories...
+ninja: no work to do.
+Loading net-file from 'juelich_sumo/osm.net.xml.gz' ... done (1067ms).
+Loading additional-files from 'juelich_sumo/osm.poly.xml.gz' ... done (51ms).
+Loading additional-files from 'juelich_sumo/output.add.xml' ... done (8ms).
+Loading route-files incrementally from 'juelich_sumo/osm.passenger.trips.xml'
+Loading done.
+Simulation version 1.25.0 started via libsumo with time: 28800.00.
+Simulation ended at time: 29460.10.
+Reason: Libsumo requested termination.
+Statistics (avg of 0):
+ RouteLength: 0.00
+ Speed: 0.00
+ Duration: 0.00
+ WaitingTime: 0.00
+ TimeLoss: 0.00
+ DepartDelay: 0.00
+[sumo-per] Dataset: per_dataset/stage1_new_repeat_a2/window.csv

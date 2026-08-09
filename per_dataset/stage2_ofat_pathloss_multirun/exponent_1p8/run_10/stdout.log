@@ -1,0 +1,22 @@
+[0/2] Re-checking globbed directories...
+ninja: no work to do.
+[0/2] Re-checking globbed directories...
+ninja: no work to do.
+Loading net-file from 'juelich_sumo/osm.net.xml.gz' ... done (750ms).
+Loading additional-files from 'juelich_sumo/osm.poly.xml.gz' ... done (48ms).
+Loading additional-files from 'juelich_sumo/output.add.xml' ... done (8ms).
+Loading route-files incrementally from 'juelich_sumo/osm.passenger.trips.xml'
+Loading done.
+Simulation version 1.25.0 started via libsumo with time: 0.00.
+Simulation ended at time: 660.10.
+Reason: Libsumo requested termination.
+Statistics (avg of 57):
+ RouteLength: 1191.35
+ Speed: 7.83
+ Duration: 154.06
+ WaitingTime: 20.45
+ TimeLoss: 35.72
+ DepartDelay: 0.04
+DijkstraRouter answered 74 queries and explored 376.27 edges on average.
+DijkstraRouter spent 0.04s answering queries (0.57ms on average).
+[sumo-per] Dataset: per_dataset/stage2_ofat_pathloss_multirun/exponent_1p8/run_10/window.csv

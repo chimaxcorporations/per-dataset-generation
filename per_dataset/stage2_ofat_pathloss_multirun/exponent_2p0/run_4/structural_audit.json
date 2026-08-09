@@ -1,0 +1,19 @@
+{
+  "files": {
+    "per_dataset/stage2_ofat_pathloss_multirun/exponent_2p0/run_4/window.csv": {
+      "rows": 141865,
+      "invalid_counts": 0,
+      "invalid_per": 0,
+      "missing_phy": 55361,
+      "missing_phy_with_samples": 0,
+      "rx_without_phy": 0,
+      "same_window_phy_rows": 86504,
+      "first_window_s": 60.0,
+      "last_window_s": 660.0,
+      "structurally_valid": true,
+      "leakage_warning": "Do not use same-window rssi_dbm, snr_db, phy_n, or a phy_observed flag to predict the same window's PER. Lag them by >=1 window and split data by complete run/seed/scenario."
+    }
+  },
+  "all_structurally_valid": true,
+  "deterministic_match": null
+}

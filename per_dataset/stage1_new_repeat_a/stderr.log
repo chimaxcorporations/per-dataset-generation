@@ -1,0 +1,44 @@
+Invalid command-line argument: --wifiStandard=802.11p
+sumo-per-example [Program Options] [General Arguments]
+
+Program Options:
+    --sumocfg:             Path to the required SUMO .sumocfg file
+    --gui:                 Run SUMO with its GUI [false]
+    --runId:               Unique experiment-run identifier [julich_d10_r2_log_s01]
+    --scenarioId:          Scenario or map identifier [julich]
+    --outputDir:           Run-specific output directory [results/julich_d10_r2_log_s01]
+    --outCsv:              CSV filename inside outputDir [window_1s.csv]
+    --failIfOutputExists:  Abort rather than overwrite an existing CSV [true]
+    --ns3Seed:             ns-3 RNG seed [12345]
+    --ns3Run:              ns-3 RNG run number [1]
+    --sumoSeed:            SUMO RNG seed [1]
+    --warmup:              Warm-up duration in ns-3 seconds [60]
+    --simEnd:              Simulation end in ns-3 seconds [660]
+    --step:                SUMO/ns-3 coupling step in seconds [0.1]
+    --window:              Aggregation-window duration in seconds [1]
+    --sumoBegin:           Absolute SUMO begin time in seconds [28800]
+    --sumoEnd:             Absolute SUMO end time in seconds [32400]
+    --trafficStart:        CAM application start in ns-3 seconds [0]
+    --beaconInterval:      CAM interval in seconds [0.5]
+    --beaconSize:          Total CAM application-packet size in bytes [300]
+    --maxVehicles:         Maximum simultaneous SUMO vehicles [100]
+    --evalRadius:          Primary receiver-evaluation radius in metres [500]
+    --maxRetainedRadius:   Maximum retained link radius in metres [1000]
+    --port:                UDP destination port [5000]
+    --propagation:         Propagation model: log-distance, log-distance-nakagami, or urban [log-distance]
+    --pathLossExponent:    Log-distance path-loss exponent [2]
+    --referenceDistance:   Reference distance in metres [1]
+    --referenceLoss:       Reference loss in dB [46.6777]
+    --txPower:             Transmit power in dBm [20]
+    --dataMode:            ns-3 Wi-Fi data/control mode [OfdmRate6MbpsBW10MHz]
+    --cbrSamplePeriod:     CBR sampling period in seconds [0.001]
+
+General Arguments:
+    --PrintGlobals:              Print the list of globals.
+    --PrintGroups:               Print the list of groups.
+    --PrintGroup=[group]:        Print all TypeIds of group.
+    --PrintTypeIds:              Print all TypeIds.
+    --PrintAttributes=[typeid]:  Print all attributes of typeid.
+    --PrintVersion:              Print the ns-3 version.
+    --PrintHelp:                 Print this help message.
+

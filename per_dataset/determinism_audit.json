@@ -1,0 +1,39 @@
+{
+  "files": {
+    "per_dataset/repeat_a/window.csv": {
+      "rows": 82,
+      "invalid_counts": 0,
+      "invalid_per": 0,
+      "missing_phy": 76,
+      "missing_phy_with_samples": 0,
+      "rx_without_phy": 0,
+      "same_window_phy_rows": 6,
+      "first_window_s": 10.0,
+      "last_window_s": 30.0,
+      "structurally_valid": true,
+      "leakage_warning": "Do not use same-window rssi_dbm, snr_db, phy_n, or a phy_observed flag to predict the same window's PER. Lag them by >=1 window and split data by complete run/seed/scenario."
+    },
+    "per_dataset/repeat_b/window.csv": {
+      "rows": 82,
+      "invalid_counts": 0,
+      "invalid_per": 0,
+      "missing_phy": 76,
+      "missing_phy_with_samples": 0,
+      "rx_without_phy": 0,
+      "same_window_phy_rows": 6,
+      "first_window_s": 10.0,
+      "last_window_s": 30.0,
+      "structurally_valid": true,
+      "leakage_warning": "Do not use same-window rssi_dbm, snr_db, phy_n, or a phy_observed flag to predict the same window's PER. Lag them by >=1 window and split data by complete run/seed/scenario."
+    }
+  },
+  "all_structurally_valid": true,
+  "deterministic_match": true,
+  "comparison": {
+    "first_file": "per_dataset/repeat_a/window.csv",
+    "second_file": "per_dataset/repeat_b/window.csv",
+    "first_sha256": "3ec67c00d41ad8719298c09ae9597f6976779f5cedcb4caf9ee25431e8b1bb58",
+    "second_sha256": "3ec67c00d41ad8719298c09ae9597f6976779f5cedcb4caf9ee25431e8b1bb58",
+    "byte_identical": true
+  }
+}
